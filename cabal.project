@@ -1,2 +1,5 @@
 Packages:
   troupe
+
+Constraints:
+  troupe +werror,
