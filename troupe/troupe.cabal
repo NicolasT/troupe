@@ -1,31 +1,45 @@
 cabal-version:   3.0
+build-type:      Simple
 name:            troupe
 version:         0.1.0.0
 synopsis:        Haskell Actors
-
--- description:
+description:     A library bringing Erlang-style processes to Haskell
 homepage:        https://github.com/NicolasT/troupe
+bug-reports:     https://github.com/NicolasT/troupe/issues
 license:         BSD-3-Clause
 license-file:    LICENSE
 author:          Nicolas Trangez
 maintainer:      ikke@nicolast.be
-
--- copyright:
+copyright:       (c) 2023, Nicolas Trangez
 category:        Concurrency
-build-type:      Simple
+stability:       alpha
 extra-doc-files: CHANGELOG.md
 
--- extra-source-files:
+source-repository head
+  type:     git
+  location: https://github.com/NicolasT/troupe.git
+  subdir:   troupe
+
+flag werror
+  description: Turn compiler warnings into errors.
+  default:     False
+  manual:      True
 
 common warnings
-  ghc-options: -Wall
+  ghc-options:
+    -Wall -Wincomplete-uni-patterns -Wincomplete-record-updates
+    -Wpartial-fields -Wmissing-home-modules -Widentities
+    -Wredundant-constraints -Wcpp-undef -Wmissing-export-lists
+
+  cc-options:  -Wall -Wextra -pedantic
+
+  if flag(werror)
+    ghc-options: -Werror -optc=-Werror
+    cc-options:  -Werror
 
 library
   import:           warnings
   exposed-modules:  MyLib
-
-  -- other-modules:
-  -- other-extensions:
   build-depends:    base ^>=4.17.0.0
   hs-source-dirs:   src
   default-language: Haskell2010
@@ -33,9 +47,6 @@ library
 test-suite troupe-test
   import:           warnings
   default-language: Haskell2010
-
-  -- other-modules:
-  -- other-extensions:
   type:             exitcode-stdio-1.0
   hs-source-dirs:   test
   main-is:          Main.hs
