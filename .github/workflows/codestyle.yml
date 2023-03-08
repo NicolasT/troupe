@@ -1,0 +1,39 @@
+---
+name: Codestyle
+on:
+  - push
+  - pull_request
+
+jobs:
+  ormolu:
+    name: Lint code layout using Ormolu
+    runs-on: ubuntu-20.04
+    steps:
+      - name: checkout
+        uses: actions/checkout@v3.3.0
+      - name: ormolu
+        uses: mrkkrp/ormolu-action@v10
+
+  cabal-fmt:
+    name: Lint Cabal project description using cabal-fmt
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Cache Cabal files
+        uses: actions/cache@v3.2.6
+        with:
+          path: |
+            ~/.cabal/packages
+            ~/.cabal/store
+          key: ${{ runner.os }}-cabal
+
+      - name: Install cabal-fmt
+        run: |
+          cabal update
+          cabal install "cabal-fmt-0.1.6"
+
+      - name: checkout
+        uses: actions/checkout@v3.3.0
+
+      - name: Check formatting of Cabal project description
+        run: |
+          ~/.cabal/bin/cabal-fmt --Werror --check troupe/troupe.cabal
