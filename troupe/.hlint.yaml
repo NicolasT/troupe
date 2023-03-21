@@ -1,0 +1,6 @@
+# Ignore vendored code
+- ignore:
+    within: [ "Control.Distributed.Process.Internal.CQueue",
+              "Control.Distributed.Process.Internal.StrictList",
+              "Control.Distributed.Process.Internal.StrictMVar",
+            ]
