@@ -166,6 +166,8 @@ jobs:
           echo "    ghc-options: -Werror=missing-methods" >> cabal.project
           cat >> cabal.project <<EOF
           constraints: troupe +werror
+          allow-newer: focus-1.0.3:transformers
+          allow-newer: stm-hamt-1.2.0.9:transformers
           EOF
           $HCPKG list --simple-output --names-only | perl -ne 'for (split /\s+/) { print "constraints: $_ installed\n" unless /^(troupe)$/; }' >> cabal.project.local
           cat cabal.project
@@ -196,6 +198,7 @@ jobs:
       - name: hlint
         run: |
           if [ $((HCNUMVER < 90600)) -ne 0 ] ; then (cd ${PKGDIR_troupe} && hlint -XHaskell2010 src) ; fi
+          if [ $((HCNUMVER < 90600)) -ne 0 ] ; then (cd ${PKGDIR_troupe} && hlint -XHaskell2010 troupe-distributed-process) ; fi
       - name: cabal check
         run: |
           cd ${PKGDIR_troupe} || false

@@ -1,5 +1,9 @@
 Packages:
   troupe
 
+Allow-Newer:
+  focus-1.0.3:transformers,
+  stm-hamt-1.2.0.9:transformers,
+
 Constraints:
   troupe +werror,
