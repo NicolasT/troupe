@@ -12,7 +12,7 @@ jobs:
       - name: checkout
         uses: actions/checkout@v3.3.0
       - name: ormolu
-        uses: mrkkrp/ormolu-action@v10
+        uses: mrkkrp/ormolu-action@v11
 
   cabal-fmt:
     name: Lint Cabal project description using cabal-fmt
