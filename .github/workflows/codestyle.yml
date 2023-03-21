@@ -29,7 +29,7 @@ jobs:
       - name: Install cabal-fmt
         run: |
           cabal update
-          cabal install "cabal-fmt-0.1.6"
+          cabal install --with-ghc=ghc-9.4 "cabal-fmt-0.1.6"
 
       - name: checkout
         uses: actions/checkout@v3.3.0
