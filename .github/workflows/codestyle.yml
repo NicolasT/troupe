@@ -12,7 +12,7 @@ jobs:
       - name: checkout
         uses: actions/checkout@v3.3.0
       - name: ormolu
-        uses: mrkkrp/ormolu-action@v10
+        uses: mrkkrp/ormolu-action@v11
 
   cabal-fmt:
     name: Lint Cabal project description using cabal-fmt
@@ -29,7 +29,7 @@ jobs:
       - name: Install cabal-fmt
         run: |
           cabal update
-          cabal install "cabal-fmt-0.1.6"
+          cabal install --with-ghc=ghc-9.4 "cabal-fmt-0.1.6"
 
       - name: checkout
         uses: actions/checkout@v3.3.0
