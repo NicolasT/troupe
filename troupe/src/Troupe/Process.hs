@@ -35,6 +35,10 @@ module Troupe.Process
     spawn,
     spawnLink,
     spawnMonitor,
+    spawnWithOptions,
+    SpawnOptions (..),
+    ThreadAffinity (..),
+    WithMonitor (..),
     send,
     sendLazy,
     receive,
@@ -47,7 +51,14 @@ module Troupe.Process
 where
 
 import Control.Applicative (Alternative, (<|>))
-import Control.Concurrent.Async (async, cancelWith, uninterruptibleCancel, waitCatchSTM, withAsyncWithUnmask)
+import Control.Concurrent.Async
+  ( async,
+    cancelWith,
+    uninterruptibleCancel,
+    waitCatchSTM,
+    withAsyncOnWithUnmask,
+    withAsyncWithUnmask,
+  )
 import Control.Concurrent.STM
   ( STM,
     TQueue,
@@ -543,15 +554,39 @@ isProcessAlive !pid =
     isJust <$> lookupProcess pid
 {-# SPECIALIZE isProcessAlive :: ProcessId -> Process r Bool #-}
 
+-- | 'WithMonitor' defines how a process is monitored.
 data WithMonitor r where
+  -- | The process is started with a monitor.
   WithMonitor :: WithMonitor (ProcessId, MonitorRef)
+  -- | The process is started without a monitor.
   WithoutMonitor :: WithMonitor ProcessId
 
+-- | Process spawn options.
+--
+-- See 'spawnWithOptions'.
 data SpawnOptions r = SpawnOptions
-  { spawnOptionsLink :: !Bool,
-    spawnOptionsMonitor :: !(WithMonitor r)
+  { -- | Link the process.
+    spawnOptionsLink :: !Bool,
+    -- | Optionally monitor the process.
+    spawnOptionsMonitor :: !(WithMonitor r),
+    -- | Process thread affinity.
+    spawnOptionsAffinity :: !ThreadAffinity
   }
 
+-- Copied from ki
+
+-- | What, if anything, a process is bound to.
+data ThreadAffinity
+  = -- | Unbound.
+    Unbound
+  | -- | Bound to a capability.
+    Capability Int
+  deriving stock (Eq, Show)
+
+-- | The low-level spawn that takes an additional options argument.
+--
+-- 'spawn', 'spawnLink' and 'spawnMonitor' are specialized versions of this
+-- function.
 spawnWithOptions :: (MonadProcess r m, MonadIO m) => SpawnOptions t -> Process r a -> m t
 spawnWithOptions !options process = do
   let cb pid = do
@@ -563,7 +598,7 @@ spawnWithOptions !options process = do
             ref <- monitorSTM pid
             pure (pid, ref)
 
-  spawnImpl cb process
+  spawnImpl (spawnOptionsAffinity options) cb process
 {-# SPECIALIZE spawnWithOptions :: SpawnOptions t -> Process r a -> Process r t #-}
 
 -- | Spawn a new process.
@@ -573,7 +608,8 @@ spawn = spawnWithOptions options
     options =
       SpawnOptions
         { spawnOptionsLink = False,
-          spawnOptionsMonitor = WithoutMonitor
+          spawnOptionsMonitor = WithoutMonitor,
+          spawnOptionsAffinity = Unbound
         }
 {-# INLINE spawn #-}
 {-# SPECIALIZE spawn :: Process r a -> Process r ProcessId #-}
@@ -587,7 +623,8 @@ spawnLink = spawnWithOptions options
     options =
       SpawnOptions
         { spawnOptionsLink = True,
-          spawnOptionsMonitor = WithoutMonitor
+          spawnOptionsMonitor = WithoutMonitor,
+          spawnOptionsAffinity = Unbound
         }
 {-# INLINE spawnLink #-}
 {-# SPECIALIZE spawnLink :: Process r a -> Process r ProcessId #-}
@@ -601,7 +638,8 @@ spawnMonitor = spawnWithOptions options
     options =
       SpawnOptions
         { spawnOptionsLink = False,
-          spawnOptionsMonitor = WithMonitor
+          spawnOptionsMonitor = WithMonitor,
+          spawnOptionsAffinity = Unbound
         }
 {-# INLINE spawnMonitor #-}
 {-# SPECIALIZE spawnMonitor :: Process r a -> Process r (ProcessId, MonitorRef) #-}
@@ -730,8 +768,8 @@ matchIf predicate handle = MatchMessage $ \dyn -> case fromDynamic dyn of
   Just a -> if predicate a then Just (handle a) else Nothing
 {-# INLINE matchIf #-}
 
-spawnImpl :: (MonadProcess r m, MonadIO m) => (ProcessId -> ReaderT (ProcessEnv r) STM t) -> Process r a -> m t
-spawnImpl cb process = do
+spawnImpl :: (MonadProcess r m, MonadIO m) => ThreadAffinity -> (ProcessId -> ReaderT (ProcessEnv r) STM t) -> Process r a -> m t
+spawnImpl affinity cb process = do
   currentEnv <- getProcessEnv
 
   liftIO $ do
@@ -749,7 +787,11 @@ spawnImpl cb process = do
       c <- newEmptyTMVarIO
       let act restore = atomically (readTMVar c) >>= \() -> restore (runProcess process processEnv)
 
-      withAsyncWithUnmask act $ \a -> do
+      let withAffinity = case affinity of
+            Unbound -> withAsyncWithUnmask act
+            Capability n -> withAsyncOnWithUnmask n act
+
+      withAffinity $ \a -> do
         let pid = processContextId (processEnvProcessContext processEnv)
 
         -- 1. Register the process on the node, calculate the result value of `spawnImpl`, and
@@ -853,4 +895,4 @@ spawnImpl cb process = do
               Nothing -> throwM $ InvariantViolation "spawnImpl: impossible case, Async returned but TMVar empty"
               Just t -> pure t
         Right t -> pure t
-{-# SPECIALIZE spawnImpl :: (ProcessId -> ReaderT (ProcessEnv r) STM t) -> Process r a -> Process r t #-}
+{-# SPECIALIZE spawnImpl :: ThreadAffinity -> (ProcessId -> ReaderT (ProcessEnv r) STM t) -> Process r a -> Process r t #-}

@@ -7,8 +7,17 @@
 
 module Troupe.Test (tests) where
 
-import Control.Concurrent (newEmptyMVar, putMVar, takeMVar)
+import Control.Concurrent
+  ( getNumCapabilities,
+    isCurrentThreadBound,
+    myThreadId,
+    newEmptyMVar,
+    putMVar,
+    takeMVar,
+    threadCapability,
+  )
 import Control.DeepSeq (NFData (..))
+import Control.Exception.Base (MaskingState (..), getMaskingState)
 import Control.Exception.Safe (Exception, Handler (..), bracket, catch, catchesAsync, fromException, mask, throwM)
 import Control.Monad (forever)
 import Control.Monad.IO.Class (liftIO)
@@ -24,6 +33,9 @@ import Troupe
     Process,
     ProcessId,
     ProcessOption (..),
+    SpawnOptions (..),
+    ThreadAffinity (..),
+    WithMonitor (..),
     demonitor,
     exit,
     expect,
@@ -42,6 +54,7 @@ import Troupe
     spawn,
     spawnLink,
     spawnMonitor,
+    spawnWithOptions,
     pattern IsExit,
   )
 
@@ -268,6 +281,46 @@ tests =
                   pid' @?= pid
                   fromException exc @?= Just TestException
             ]
+        ],
+      testGroup
+        "spawnWithOptions"
+        [ let affinityTest affinity action = troupeTest () $ do
+                s <- self
+                _ <- spawnWithOptions (SpawnOptions True WithoutMonitor affinity) $ do
+                  _ <- action
+                  send s ()
+                () <- expect
+                pure ()
+              assertUnmasked = do
+                s <- getMaskingState
+                s @?= Unmasked
+           in testGroup
+                "ThreadAffinity"
+                [ testCase "Unbound" $ affinityTest Unbound $ liftIO $ do
+                    assertUnmasked
+                    isBound <- isCurrentThreadBound
+                    isBound @?= False
+                    (_, bounded) <- threadCapability =<< myThreadId
+                    bounded @?= False,
+                  testCase "Capability _" $ do
+                    nc <- liftIO getNumCapabilities
+                    let c = nc - 1
+                    affinityTest (Capability c) $ liftIO $ do
+                      assertUnmasked
+                      isBound <- isCurrentThreadBound
+                      isBound @?= False
+                      (n, bounded) <- threadCapability =<< myThreadId
+                      n @?= c
+                      bounded @?= True
+                      {- -- This is blocked by https://github.com/NicolasT/troupe/issues/28
+                      testCase "OsThread" $ affinityTest OsThread $ liftIO $ do
+                        assertUnmasked
+                        isBound <- isCurrentThreadBound
+                        isBound @?= True
+                        (_, bounded) <- threadCapability =<< myThreadId
+                        bounded @?= False
+                       -}
+                ]
         ],
       testGroup
         "exit"

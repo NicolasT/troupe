@@ -93,6 +93,7 @@ test-suite troupe-test
   hs-source-dirs:   test
   main-is:          troupe-test.hs
   other-modules:    Troupe.Test
+  ghc-options:      -rtsopts -threaded -with-rtsopts=-N2
   build-depends:
     , base             ^>=4.17.0.0 || ^>=4.18.0.0
     , deepseq          ^>=1.4.8.0

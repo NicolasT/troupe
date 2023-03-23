@@ -14,6 +14,12 @@ module Troupe
     spawnLink,
     spawnMonitor,
 
+    -- *** Spawning processes with options
+    spawnWithOptions,
+    SpawnOptions (..),
+    ThreadAffinity (..),
+    WithMonitor (..),
+
     -- ** Exchanging messages between processes
     send,
     sendLazy,
@@ -90,6 +96,9 @@ import Troupe.Process
     Process,
     ProcessEnv (..),
     ProcessOption (..),
+    SpawnOptions (..),
+    ThreadAffinity (..),
+    WithMonitor (..),
     demonitor,
     exit,
     expect,
@@ -111,6 +120,7 @@ import Troupe.Process
     spawn,
     spawnLink,
     spawnMonitor,
+    spawnWithOptions,
     unlink,
   )
 import Troupe.Types (Down (..), MonitorRef, ProcessId)
