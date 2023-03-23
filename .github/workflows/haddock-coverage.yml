@@ -1,0 +1,32 @@
+---
+name: Haddock API coverage
+on:
+  - push
+  - pull_request
+
+jobs:
+  haddock-api-coverage:
+    name: Check Haddock API coverage
+    runs-on: ubuntu-20.04
+    steps:
+      - name: checkout
+        uses: actions/checkout@v3.3.0
+      - name: Cache Cabal files
+        uses: actions/cache@v3.2.6
+        with:
+          path: |
+            ~/.cabal/packages
+            ~/.cabal/store
+          key: ${{ runner.os }}-cabal
+
+      - name: Update Cabal cache
+        run: |
+          cabal update
+
+      - name: Build Haddocks
+        run: |
+          cabal haddock troupe | tee haddock.out
+
+      - name: Check coverage
+        run: |
+          awk -f .github/workflows/haddock-coverage.awk haddock.out
