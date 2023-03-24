@@ -90,6 +90,25 @@ tests =
           send pid . Ping =<< self
           Pong <- expect
           pure (),
+      testCase "spawnLink" $ troupeTest () $ do
+        (_, ref) <- spawnMonitor $ do
+          _ <- spawnLink $ throwM TestException
+          () <- expect
+          liftIO $ assertFailure "This should not be reached"
+        Down ref' _ exc <- expect
+        liftIO $ do
+          ref' @?= ref
+          case exc of
+            Nothing -> assertFailure "Expected an exception"
+            Just exc' -> case fromException exc' of
+              Nothing -> assertFailure "Expected an Exit exception"
+              Just e -> do
+                exitLink e @?= True
+                case exitReason e of
+                  Nothing -> assertFailure "Expected an Exit with a reason"
+                  Just t -> case fromException t of
+                    Nothing -> assertFailure "Expected a TestException as reason"
+                    Just TestException -> pure (),
       testGroup
         "link"
         [ testCase "Simple scenario" $ troupeTest () $ do
