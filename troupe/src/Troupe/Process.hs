@@ -53,6 +53,8 @@ import Control.Concurrent.STM
     TQueue,
     TVar,
     atomically,
+    check,
+    isEmptyTQueue,
     newEmptyTMVarIO,
     newTQueue,
     newTVar,
@@ -662,6 +664,9 @@ receiveWithOptions !options !matches = do
         ReceiveTimeout t -> Timeout t
       matches' = map (\(MatchMessage fn) -> MatchMsg fn) matches
   p <- liftIO $ dequeue queue bs matches'
+
+  ensureSignalsDelivered
+
   case p of
     Nothing -> case receiveOptionsMethod options of
       ReceiveBlocking -> error "receiveWithOptions: dequeue returned Nothing in Blocking call"
@@ -671,6 +676,12 @@ receiveWithOptions !options !matches = do
       ReceiveBlocking -> Identity <$> a
       ReceiveNonBlocking -> Just <$> a
       ReceiveTimeout _ -> Just <$> a
+  where
+    ensureSignalsDelivered = do
+      exceptions <- processContextExceptions . processEnvProcessContext <$> getProcessEnv
+      liftIO $ atomically $ do
+        e <- isEmptyTQueue exceptions
+        check e
 {-# SPECIALIZE receiveWithOptions :: ReceiveOptions f -> [Match (Process r) a] -> Process r (f a) #-}
 
 -- | Receive some message from the process mailbox, blocking.
@@ -714,9 +725,9 @@ match = matchIf (const True)
 
 -- | Match any message meeting some predicate of a specific type.
 matchIf :: (Typeable a) => (a -> Bool) -> (a -> m b) -> Match m b
-matchIf check handle = MatchMessage $ \dyn -> case fromDynamic dyn of
+matchIf predicate handle = MatchMessage $ \dyn -> case fromDynamic dyn of
   Nothing -> Nothing
-  Just a -> if check a then Just (handle a) else Nothing
+  Just a -> if predicate a then Just (handle a) else Nothing
 {-# INLINE matchIf #-}
 
 spawnImpl :: (MonadProcess r m, MonadIO m) => (ProcessId -> ReaderT (ProcessEnv r) STM t) -> Process r a -> m t
