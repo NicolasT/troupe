@@ -3,6 +3,7 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE PatternSynonyms #-}
 
 module Troupe.Test (tests) where
 
@@ -41,6 +42,7 @@ import Troupe
     spawn,
     spawnLink,
     spawnMonitor,
+    pattern IsExit,
   )
 
 troupeTest :: r -> Process r a -> Assertion
@@ -414,7 +416,44 @@ tests =
         awaitProcessExit ref
 
         a' <- isProcessAlive pid
-        liftIO $ a' @?= False
+        liftIO $ a' @?= False,
+      testGroup
+        "Non-regression"
+        [ testCase "Deliver signals before/when receiving messages (#25)" $ troupeTest () $ do
+            -- The "main" test thread
+            (_, _) <- spawnMonitor $ do
+              mv <- liftIO newEmptyMVar
+              -- The child thread
+              pid <- spawnLink $ do
+                liftIO $ takeMVar mv
+                -- Unconditional failure
+                throwM TestException
+              -- When this returns, the main thread is linked to the thread,
+              -- and monitoring it.
+              _ref <- monitor pid
+              liftIO $ putMVar mv ()
+
+              -- Wait for the monitor. However, if `Down` is delivered, this
+              -- is because the child exited, with an exception (there's no
+              -- other way for it to exit), in which case, through the link,
+              -- this thread should be killed as well. Hence, `expect` should
+              -- not return and this process should exit with an exception,
+              -- as observed by the test process through a monitor.
+              --
+              -- Before the fix, putting a
+              -- () <- expect
+              -- here, which will never be fulfilled, makes the test succeed:
+              -- this thread blocks, the Exit exception from the link can be
+              -- injected, and we're good.
+              Down {} <- expect
+              pure ()
+
+            Down _ _ exc <- expect
+
+            liftIO $ case exc of
+              Just IsExit -> pure ()
+              _ -> assertFailure "Expected an Exit exception"
+        ]
     ]
   where
     matchMonitor ref = matchIf (\d -> downMonitorRef d == ref) (\_ -> pure ())
