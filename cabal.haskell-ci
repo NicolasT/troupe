@@ -1,2 +1,5 @@
+-- Need `Allow-Newer` for GHC-9.6 (for now)
+Copy-Fields: some
+
 Hlint: True
 Hlint-Job: 9.4.4
