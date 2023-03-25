@@ -4,6 +4,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Troupe.Test (tests) where
 
@@ -18,9 +19,20 @@ import Control.Concurrent
   )
 import Control.DeepSeq (NFData (..))
 import Control.Exception.Base (MaskingState (..), getMaskingState)
-import Control.Exception.Safe (Exception, Handler (..), bracket, catch, catchesAsync, fromException, mask, throwM)
+import Control.Exception.Safe
+  ( Exception,
+    Handler (..),
+    bracket,
+    catch,
+    catchJust,
+    catchesAsync,
+    fromException,
+    mask,
+    throwM,
+  )
 import Control.Monad (forever)
 import Control.Monad.IO.Class (liftIO)
+import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit (Assertion, assertFailure, testCase, (@?=))
@@ -91,6 +103,11 @@ instance Exception TestException
 
 instance NFData TestException where
   rnf t = t `seq` ()
+
+newtype TestExceptionWithValue a = TestExceptionWithValue a
+  deriving (Show, Eq)
+
+instance (Typeable a, Show a) => Exception (TestExceptionWithValue a)
 
 tests :: TestTree
 tests =
@@ -505,7 +522,40 @@ tests =
 
             liftIO $ case exc of
               Just (IsExit _ _ True (Just exc')) -> fromException exc' @?= Just TestException
-              _ -> assertFailure "Expected an Exit exception"
+              _ -> assertFailure "Expected an Exit exception",
+          testCase "Monitor thread waits for thread exit after throwTo, which may not happen (#30)" $ troupeTest () $ do
+            mv <- liftIO newEmptyMVar
+            s <- self
+
+            (pid, _) <- spawnMonitor $ do
+              send s (0 :: Int)
+              catchJust
+                ( \case
+                    TestExceptionWithValue (0 :: Int) -> pure ()
+                    _ -> Nothing
+                )
+                (liftIO (takeMVar mv))
+                pure
+
+              send s (1 :: Int)
+
+              liftIO $ takeMVar mv
+
+            (0 :: Int) <- expect
+
+            -- This one gets caught
+            exit pid (Just $ TestExceptionWithValue (0 :: Int))
+
+            (1 :: Int) <- expect
+
+            -- Due to #30, this one is never delivered
+            exit pid (Just $ TestExceptionWithValue (1 :: Int))
+
+            -- Let child continue
+            liftIO $ putMVar mv ()
+
+            Down _ _ exc <- expect
+            liftIO $ fmap fromException exc @?= Just (Just $ TestExceptionWithValue (1 :: Int))
         ]
     ]
   where

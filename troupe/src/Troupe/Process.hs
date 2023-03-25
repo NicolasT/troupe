@@ -51,9 +51,10 @@ module Troupe.Process
 where
 
 import Control.Applicative (Alternative, (<|>))
+import Control.Concurrent (throwTo)
 import Control.Concurrent.Async
   ( async,
-    cancelWith,
+    asyncThreadId,
     uninterruptibleCancel,
     waitCatchSTM,
     withAsyncOnWithUnmask,
@@ -814,7 +815,7 @@ spawnImpl affinity cb process = do
               wait >>= \case
                 Left _ -> pure ()
                 Right exc -> do
-                  uninterruptibleCancelWith a exc
+                  uninterruptibleThrowTo a exc
                   loop
 
         -- 3. At this point, either the `Async` already returned, or we canceled it.
@@ -836,13 +837,14 @@ spawnImpl affinity cb process = do
 
         ( (register >>= \() -> loop)
             `withException` \e ->
-              uninterruptibleCancelWith a (e :: SomeException)
+              uninterruptibleThrowTo a (e :: SomeException)
           )
           `finally` cleanup
 
     -- Like uninterruptibleCancel, but with a custom exception
-    uninterruptibleCancelWith a e =
-      uninterruptibleMask_ (cancelWith a e)
+    uninterruptibleThrowTo a e =
+      uninterruptibleMask_ $
+        throwTo (asyncThreadId a) e
 
     registerProcess nodeContext processContext =
       Map.insert processContext (processContextId processContext) (nodeContextProcesses nodeContext)
