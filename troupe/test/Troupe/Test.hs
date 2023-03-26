@@ -524,8 +524,8 @@ tests =
               Just (IsExit _ _ True (Just exc')) -> fromException exc' @?= Just TestException
               _ -> assertFailure "Expected an Exit exception",
           testCase "Monitor thread waits for thread exit after throwTo, which may not happen (#30)" $ troupeTest () $ do
-            mv <- liftIO newEmptyMVar
             s <- self
+            let block = expect >>= \() -> pure ()
 
             (pid, _) <- spawnMonitor $ do
               send s (0 :: Int)
@@ -534,12 +534,12 @@ tests =
                     TestExceptionWithValue (0 :: Int) -> pure ()
                     _ -> Nothing
                 )
-                (liftIO (takeMVar mv))
+                block
                 pure
 
               send s (1 :: Int)
 
-              liftIO $ takeMVar mv
+              block
 
             (0 :: Int) <- expect
 
@@ -550,9 +550,6 @@ tests =
 
             -- Due to #30, this one is never delivered
             exit pid (Just $ TestExceptionWithValue (1 :: Int))
-
-            -- Let child continue
-            liftIO $ putMVar mv ()
 
             Down _ _ exc <- expect
             liftIO $ fmap fromException exc @?= Just (Just $ TestExceptionWithValue (1 :: Int))
