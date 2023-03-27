@@ -34,8 +34,9 @@ import Control.Monad (forever)
 import Control.Monad.IO.Class (liftIO)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
+import System.Clock (Clock (Monotonic), diffTimeSpec, getTime)
 import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.HUnit (Assertion, assertFailure, testCase, (@?=))
+import Test.Tasty.HUnit (Assertion, assertBool, assertFailure, testCase, (@?=))
 import Troupe
   ( DemonitorOption (..),
     Down (..),
@@ -48,6 +49,7 @@ import Troupe
     SpawnOptions (..),
     ThreadAffinity (..),
     WithMonitor (..),
+    after,
     demonitor,
     exit,
     expect,
@@ -58,7 +60,6 @@ import Troupe
     matchIf,
     monitor,
     receive,
-    receiveTimeout,
     runNode,
     self,
     send,
@@ -183,7 +184,7 @@ tests =
                   Nothing -> assertFailure $ "Expected downReason to be a TestException: " <> show dr
                   Just TestException -> pure ()
 
-            receiveTimeout 0 [match pure] >>= \case
+            receive [match (fmap Just), after 0 (pure Nothing)] >>= \case
               Nothing -> pure ()
               Just Down {} -> liftIO $ assertFailure "unexpected Down message",
           testGroup
@@ -263,7 +264,7 @@ tests =
             demonitor [] ref
             liftIO $ putMVar m ()
             Exit _ _ _ Nothing <- expect
-            receiveTimeout 0 [matchMonitor ref] >>= \res -> liftIO $ do
+            receive [Just <$> matchMonitor ref, after 0 (pure Nothing)] >>= \res -> liftIO $ do
               res @?= Nothing,
           testCase "DemonitorFlush" $ troupeTest () $ do
             m <- liftIO newEmptyMVar
@@ -278,7 +279,7 @@ tests =
 
             receive [matchMonitor ref]
             demonitor [DemonitorFlush] ref2
-            receiveTimeout 0 [matchMonitor ref2] >>= \res -> liftIO $ do
+            receive [Just <$> matchMonitor ref2, after 0 (pure Nothing)] >>= \res -> liftIO $ do
               res @?= Nothing
         ],
       testGroup
@@ -487,6 +488,98 @@ tests =
 
         a' <- isProcessAlive pid
         liftIO $ a' @?= False,
+      testGroup
+        "receive"
+        [ testCase "after 1000" $ troupeTest () $ do
+            pid <- spawnLink $ do
+              start <- liftIO $ getTime Monotonic
+              r <-
+                receive
+                  [ match (\() -> pure "message"),
+                    after 1000 (pure "after"),
+                    after 1000000 (pure "long after")
+                  ]
+              end <- liftIO $ getTime Monotonic
+
+              liftIO $ do
+                r @?= "after"
+
+                let nsPerUs = 1000
+                    minDelay = 1000 * nsPerUs
+                    maxDelay = (1000000 `div` 2) * nsPerUs
+                    diff = diffTimeSpec end start
+
+                assertBool
+                  ("Unexpectedly short delay: " <> show diff)
+                  (diff >= minDelay)
+
+                assertBool
+                  ("Unexpectedly long delay: " <> show diff)
+                  (diff < maxDelay)
+
+            ref <- monitor pid
+            awaitProcessExit ref,
+          testCase "after 1000, with message" $ troupeTest () $ do
+            pid <- spawnLink $ do
+              start <- liftIO $ getTime Monotonic
+              r <-
+                receive
+                  [ match (\() -> pure "message"),
+                    after 100000000 (pure "after")
+                  ]
+              end <- liftIO $ getTime Monotonic
+
+              liftIO $ do
+                r @?= "message"
+
+                let diff = diffTimeSpec end start
+                    maxDelay = 100000000 * 1000
+                assertBool ("Unexpectedly long delay: " <> show diff) (diff < maxDelay)
+
+            ref <- monitor pid
+            send pid ()
+            awaitProcessExit ref,
+          testGroup
+            "after 0"
+            [ testCase "No message" $ troupeTest () $ do
+                pid <- spawnLink $ do
+                  r <-
+                    receive
+                      [ match (\() -> pure "message"),
+                        after 0 (pure "after")
+                      ]
+                  liftIO $ r @?= "after"
+
+                ref <- monitor pid
+                awaitProcessExit ref,
+              testCase "Message" $ troupeTest () $ do
+                pid <- spawnLink $ do
+                  s <- self
+                  send s ()
+                  r <-
+                    receive
+                      [ match (\() -> pure "message"),
+                        after 0 (pure "after")
+                      ]
+                  liftIO $ r @?= "message"
+
+                ref <- monitor pid
+                awaitProcessExit ref,
+              testCase "ordering retained: after before match" $ troupeTest () $ do
+                pid <- spawnLink $ do
+                  s <- self
+                  send s ()
+                  r <-
+                    receive
+                      [ after 0 (pure "after"),
+                        match (\() -> pure "message")
+                      ]
+                  liftIO $ r @?= "after"
+
+                ref <- monitor pid
+                awaitProcessExit ref
+            ]
+        ],
       testGroup
         "Non-regression"
         [ testCase "Deliver signals before/when receiving messages (#25)" $ troupeTest () $ do
