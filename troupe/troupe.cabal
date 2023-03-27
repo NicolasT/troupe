@@ -106,7 +106,6 @@ test-suite troupe-test
     , concurrency      ^>=1.11.0.2
     , deepseq          ^>=1.4.8.0
     , safe-exceptions  ^>=0.1.7.3
-    , stm              ^>=2.5.1.0
     , tasty            ^>=1.4.3
     , tasty-dejafu     ^>=2.1.0.0
     , tasty-hunit      ^>=0.10.0.3

@@ -79,6 +79,9 @@ tests =
       testAuto "Another" $ do
         q <- atomically newQueue
         dequeue q [MatchMessage (\() -> pure True), MatchSTM (pure False)],
+      testAuto "F" $ do
+        q <- atomically newQueue
+        dequeue q [MatchSTM (pure (1 :: Int)), MatchSTM (pure 2), MatchSTM (pure 3)],
       testAuto "W" $ do
         q <- atomically $ do
           q <- newQueue
