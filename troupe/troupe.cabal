@@ -41,11 +41,13 @@ common warnings
 
 library
   import:           warnings
-  exposed-modules:  Troupe
+  exposed-modules:
+    Troupe
+    Troupe.Queue
+
   other-modules:
     Troupe.Exceptions
     Troupe.Process
-    Troupe.Queue
     Troupe.Types
 
   build-depends:
@@ -94,13 +96,19 @@ test-suite troupe-test
   type:             exitcode-stdio-1.0
   hs-source-dirs:   test
   main-is:          troupe-test.hs
-  other-modules:    Troupe.Test
+  other-modules:
+    Troupe.Queue.Test
+    Troupe.Test
+
   ghc-options:      -rtsopts -threaded -with-rtsopts=-N2
   build-depends:
     , base             ^>=4.17.0.0 || ^>=4.18.0.0
+    , concurrency      ^>=1.11.0.2
     , deepseq          ^>=1.4.8.0
     , safe-exceptions  ^>=0.1.7.3
+    , stm              ^>=2.5.1.0
     , tasty            ^>=1.4.3
+    , tasty-dejafu     ^>=2.1.0.0
     , tasty-hunit      ^>=0.10.0.3
     , transformers     ^>=0.5.6.2  || ^>=0.6.1.0
     , troupe
