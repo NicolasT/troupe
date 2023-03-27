@@ -45,11 +45,13 @@ library
   other-modules:
     Troupe.Exceptions
     Troupe.Process
+    Troupe.Queue
     Troupe.Types
 
   build-depends:
     , async                       ^>=2.2.4
     , base                        ^>=4.17.0.0 || ^>=4.18.0.0
+    , concurrency                 ^>=1.11.0.2
     , deepseq                     ^>=1.4.8.0
     , deferred-folds              ^>=0.9.18.3
     , hashable                    ^>=1.4.2.0
