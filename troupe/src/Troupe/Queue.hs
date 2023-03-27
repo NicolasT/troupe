@@ -42,7 +42,7 @@ newQueue =
 {-# SPECIALIZE newQueue :: CCS.STM (Queue CCS.STM a) #-}
 
 enqueue :: (MonadSTM stm) => Queue stm a -> a -> stm ()
-enqueue queue a = writeTQueue (queueTQueue queue) a
+enqueue queue = writeTQueue (queueTQueue queue)
 {-# INLINE enqueue #-}
 {-# SPECIALIZE enqueue :: Queue CCS.STM a -> a -> CCS.STM () #-}
 
@@ -61,7 +61,7 @@ dequeue queue matches = do
   where
     getMessages = do
       newMessages <- flushTQueue (queueTQueue queue)
-      modifyTVar' (queueMessages queue) (\old -> old ++ newMessages)
+      modifyTVar' (queueMessages queue) (++ newMessages)
     handleExistingMessages = do
       messages <- readTVar (queueMessages queue)
       foldr orElse (pure Nothing) $ flip map matches $ \case
