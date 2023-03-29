@@ -4,6 +4,9 @@ Packages:
 Allow-Newer:
   focus-1.0.3:transformers,
   stm-hamt-1.2.0.9:transformers,
+  concurrency-1.11.0.2:mtl,
+  concurrency-1.11.0.2:transformers,
+  dejafu-2.4.0.4:transformers,
 
 Constraints:
   troupe +werror,

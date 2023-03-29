@@ -168,6 +168,9 @@ jobs:
           constraints: troupe +werror
           allow-newer: focus-1.0.3:transformers
           allow-newer: stm-hamt-1.2.0.9:transformers
+          allow-newer: concurrency-1.11.0.2:mtl
+          allow-newer: concurrency-1.11.0.2:transformers
+          allow-newer: dejafu-2.4.0.4:transformers
           EOF
           $HCPKG list --simple-output --names-only | perl -ne 'for (split /\s+/) { print "constraints: $_ installed\n" unless /^(troupe)$/; }' >> cabal.project.local
           cat cabal.project
