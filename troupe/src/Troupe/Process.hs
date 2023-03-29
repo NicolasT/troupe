@@ -39,9 +39,9 @@ module Troupe.Process
     send,
     sendLazy,
     receive,
-    receiveTimeout,
     Match,
     matchIf,
+    after,
   )
 where
 
@@ -69,6 +69,7 @@ import Control.Concurrent.STM
     readTMVar,
     readTQueue,
     readTVar,
+    registerDelay,
     throwSTM,
     tryReadTMVar,
     writeTMVar,
@@ -79,7 +80,7 @@ import Control.DeepSeq (NFData, deepseq, ($!!))
 import Control.Distributed.Process.Internal.CQueue
   ( BlockSpec (..),
     CQueue,
-    MatchOn (MatchMsg),
+    MatchOn (..),
     dequeue,
     enqueueSTM,
     newCQueue,
@@ -99,7 +100,7 @@ import Control.Exception.Safe
     uninterruptibleMask_,
     withException,
   )
-import Control.Monad (MonadPlus, unless, void, when)
+import Control.Monad (MonadPlus, forM, unless, when)
 import Control.Monad.Error.Class (MonadError)
 import Control.Monad.Fix (MonadFix)
 import Control.Monad.IO.Class (MonadIO, liftIO)
@@ -126,7 +127,6 @@ import qualified Control.Monad.Trans.Writer.CPS as CPS (WriterT)
 import qualified Control.Monad.Trans.Writer.Lazy as Lazy (WriterT)
 import qualified Control.Monad.Trans.Writer.Strict as Strict (WriterT)
 import Data.Dynamic (Dynamic, fromDynamic, toDyn)
-import Data.Functor.Identity (Identity (..), runIdentity)
 import Data.Maybe (isJust)
 import Data.Typeable (Typeable)
 import DeferredFolds.UnfoldlM (forM_)
@@ -488,11 +488,10 @@ demonitor :: (MonadProcess r m, MonadIO m) => [DemonitorOption] -> MonitorRef ->
 demonitor !options !ref = do
   liftMonadProcess id $ demonitorSTM ref
   when (DemonitorFlush `elem` options) $ do
-    void $
-      receiveTimeout
-        0
-        [ matchIf (\d -> downMonitorRef d == ref) (\_ -> pure ())
-        ]
+    receive
+      [ matchIf (\d -> downMonitorRef d == ref) (\_ -> pure ()),
+        after 0 (pure ())
+      ]
 {-# SPECIALIZE demonitor :: [DemonitorOption] -> MonitorRef -> Process r () #-}
 
 exitSTM :: (Exception e) => ProcessId -> Maybe e -> ReaderT (ProcessEnv r) STM ()
@@ -631,77 +630,50 @@ sendLazy = sendWithOptions SendOptions
 {-# INLINE sendLazy #-}
 {-# SPECIALIZE sendLazy :: (Typeable a) => ProcessId -> a -> Process r () #-}
 
-data ReceiveMethod f where
-  ReceiveBlocking :: ReceiveMethod Identity
-  ReceiveNonBlocking :: ReceiveMethod Maybe
-  ReceiveTimeout :: Int -> ReceiveMethod Maybe
-
-{- HLINT ignore ReceiveOptions "Use newtype instead of data" -}
-data ReceiveOptions f = ReceiveOptions
-  { receiveOptionsMethod :: !(ReceiveMethod f)
-  }
+data ReceiveOptions = ReceiveOptions
 
 -- | Matching clause for a value of type @a@ in monadic context @m@.
-newtype Match m a
+data Match m a
   = MatchMessage (Dynamic -> Maybe (m a))
+  | MatchAfter Int (m a)
   deriving (Functor)
 
-receiveWithOptions :: (MonadProcess r m, MonadIO m) => ReceiveOptions f -> [Match m a] -> m (f a)
-receiveWithOptions !options !matches = do
+receiveWithOptions :: (MonadProcess r m, MonadIO m) => ReceiveOptions -> [Match m a] -> m a
+receiveWithOptions ReceiveOptions !matches = do
   queue <- processContextQueue . processEnvProcessContext <$> getProcessEnv
-  let bs = case receiveOptionsMethod options of
-        ReceiveBlocking -> Blocking
-        ReceiveNonBlocking -> NonBlocking
-        ReceiveTimeout t -> Timeout t
-      matches' = map (\(MatchMessage fn) -> MatchMsg fn) matches
-  p <- liftIO $ dequeue queue bs matches'
+
+  p <- liftIO $ do
+    matches' <- forM matches $ \case
+      MatchMessage fn -> pure (MatchMsg fn)
+      MatchAfter t ma -> case t of
+        0 -> pure $ MatchChan $ pure ma
+        t' -> do
+          tv <- registerDelay t'
+          pure $ MatchChan $ do
+            v <- readTVar tv
+            check v
+            pure ma
+
+    dequeue queue Blocking matches'
 
   ensureSignalsDelivered
 
   case p of
-    Nothing -> case receiveOptionsMethod options of
-      ReceiveBlocking -> error "receiveWithOptions: dequeue returned Nothing in Blocking call"
-      ReceiveNonBlocking -> pure Nothing
-      ReceiveTimeout _ -> pure Nothing
-    Just a -> case receiveOptionsMethod options of
-      ReceiveBlocking -> Identity <$> a
-      ReceiveNonBlocking -> Just <$> a
-      ReceiveTimeout _ -> Just <$> a
+    Nothing -> error "receiveWithOptions: dequeue returned Nothing"
+    Just ma -> ma
   where
     ensureSignalsDelivered = do
       exceptions <- processContextExceptions . processEnvProcessContext <$> getProcessEnv
       liftIO $ atomically $ do
         e <- isEmptyTQueue exceptions
         check e
-{-# SPECIALIZE receiveWithOptions :: ReceiveOptions f -> [Match (Process r) a] -> Process r (f a) #-}
+{-# SPECIALIZE receiveWithOptions :: ReceiveOptions -> [Match (Process r) a] -> Process r a #-}
 
 -- | Receive some message from the process mailbox, blocking.
 receive :: (MonadProcess r m, MonadIO m) => [Match m a] -> m a
-receive !matches = runIdentity <$> receiveWithOptions options matches
-  where
-    options =
-      ReceiveOptions
-        { receiveOptionsMethod = ReceiveBlocking
-        }
+receive !matches = receiveWithOptions ReceiveOptions matches
 {-# INLINE receive #-}
 {-# SPECIALIZE receive :: [Match (Process r) a] -> Process r a #-}
-
--- | Receive some message from the process mailbox.
---
--- If the given timeout is @0@, this works in a non-blocking way. Otherwise,
--- the call will time out after the given number of microseconds.
---
--- If no message is matched within the timeout period, 'Nothing' is returned,
--- otherwise @'Just' a@.
-receiveTimeout :: (MonadProcess r m, MonadIO m) => Int -> [Match m a] -> m (Maybe a)
-receiveTimeout !t = receiveWithOptions options
-  where
-    options =
-      ReceiveOptions
-        { receiveOptionsMethod = if t == 0 then ReceiveNonBlocking else ReceiveTimeout t
-        }
-{-# INLINE receiveTimeout #-}
-{-# SPECIALIZE receiveTimeout :: Int -> [Match (Process r) a] -> Process r (Maybe a) #-}
 
 -- | Match any message meeting some predicate of a specific type.
 matchIf :: (Typeable a) => (a -> Bool) -> (a -> m b) -> Match m b
@@ -709,6 +681,43 @@ matchIf predicate handle = MatchMessage $ \dyn -> case fromDynamic dyn of
   Nothing -> Nothing
   Just a -> if predicate a then Just (handle a) else Nothing
 {-# INLINE matchIf #-}
+
+-- | A 'Match' which doesn't receive any messages, but fires after a given
+-- amount of time.
+--
+-- Instead of looking for a message in the process' mailbox, an 'after' clause
+-- in a call to 'receive' will fire after a given number of microseconds,
+-- yielding the provided monadic value. This can be used to implement receiving
+-- messages with a timeout.
+--
+-- When the given timeout is @0@, the 'receive' call will be non-blocking.
+-- Note, however, the order of matches is important, so
+--
+-- @
+-- s <- self
+-- send s ()
+-- receive [after 0 (pure "timeout"), match (\() -> pure "message")]
+-- @
+--
+-- will always return @"timeout"@, whilst
+--
+-- @
+-- s <- self
+-- send s ()
+-- receive [match (\() -> pure "message"), after 0 (pure "timeout")]
+-- @
+--
+-- will always return @"message"@.
+--
+-- In general, @'after'@ should be the last 'Match' passed to 'receive'.
+after ::
+  -- | Timeout in microseconds. Use @0@ for a non-blocking 'receive'.
+  Int ->
+  -- | Action to call when the timeout expired.
+  m a ->
+  Match m a
+after = MatchAfter
+{-# INLINE after #-}
 
 spawnImpl :: (MonadProcess r m, MonadIO m) => ThreadAffinity -> (ProcessId -> ReaderT (ProcessEnv r) STM t) -> Process r a -> m t
 spawnImpl affinity cb process = do

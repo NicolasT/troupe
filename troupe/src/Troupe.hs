@@ -24,11 +24,11 @@ module Troupe
     send,
     sendLazy,
     receive,
-    receiveTimeout,
     expect,
     Match,
     match,
     matchIf,
+    after,
 
     -- ** Linking and monitoring processes
     link,
@@ -101,6 +101,7 @@ import Troupe.Process
     SpawnOptions (..),
     ThreadAffinity (..),
     WithMonitor (..),
+    after,
     demonitor,
     exit,
     getProcessOption,
@@ -111,7 +112,6 @@ import Troupe.Process
     newNodeContext,
     newProcessContext,
     receive,
-    receiveTimeout,
     runProcess,
     self,
     send,

@@ -96,6 +96,7 @@ test-suite troupe-test
   ghc-options:      -rtsopts -threaded -with-rtsopts=-N2
   build-depends:
     , base             ^>=4.17.0.0 || ^>=4.18.0.0
+    , clock            ^>=0.8.3
     , deepseq          ^>=1.4.8.0
     , safe-exceptions  ^>=0.1.7.3
     , tasty            ^>=1.4.3
