@@ -72,6 +72,8 @@ module Troupe
 where
 
 import Control.Concurrent.STM (atomically, check)
+import Control.Monad.IO.Class (MonadIO)
+import Data.Typeable (Typeable)
 import qualified StmContainers.Map as Map
 import Troupe.Exceptions
   ( Exit (..),
@@ -101,11 +103,9 @@ import Troupe.Process
     WithMonitor (..),
     demonitor,
     exit,
-    expect,
     getProcessOption,
     isProcessAlive,
     link,
-    match,
     matchIf,
     monitor,
     newNodeContext,
@@ -117,9 +117,6 @@ import Troupe.Process
     send,
     sendLazy,
     setProcessOption,
-    spawn,
-    spawnLink,
-    spawnMonitor,
     spawnWithOptions,
     unlink,
   )
@@ -144,6 +141,60 @@ runNode r process = do
   atomically $ do
     cnt <- Map.size (nodeContextProcesses nodeContext)
     check (cnt == 0)
+
+-- | Spawn a new process.
+spawn :: (MonadProcess r m, MonadIO m) => Process r a -> m ProcessId
+spawn = spawnWithOptions options
+  where
+    options =
+      SpawnOptions
+        { spawnOptionsLink = False,
+          spawnOptionsMonitor = WithoutMonitor,
+          spawnOptionsAffinity = Unbound
+        }
+{-# INLINE spawn #-}
+{-# SPECIALIZE spawn :: Process r a -> Process r ProcessId #-}
+
+-- | Spawn a new process, and atomically 'link' to it.
+--
+-- See 'spawn' and 'link'.
+spawnLink :: (MonadProcess r m, MonadIO m) => Process r a -> m ProcessId
+spawnLink = spawnWithOptions options
+  where
+    options =
+      SpawnOptions
+        { spawnOptionsLink = True,
+          spawnOptionsMonitor = WithoutMonitor,
+          spawnOptionsAffinity = Unbound
+        }
+{-# INLINE spawnLink #-}
+{-# SPECIALIZE spawnLink :: Process r a -> Process r ProcessId #-}
+
+-- | Spawn a new process, and atomically 'monitor' it.
+--
+-- See 'spawn' and 'monitor'.
+spawnMonitor :: (MonadProcess r m, MonadIO m) => Process r a -> m (ProcessId, MonitorRef)
+spawnMonitor = spawnWithOptions options
+  where
+    options =
+      SpawnOptions
+        { spawnOptionsLink = False,
+          spawnOptionsMonitor = WithMonitor,
+          spawnOptionsAffinity = Unbound
+        }
+{-# INLINE spawnMonitor #-}
+{-# SPECIALIZE spawnMonitor :: Process r a -> Process r (ProcessId, MonitorRef) #-}
+
+-- | Utility to 'receive' a value of a specific type.
+expect :: (MonadProcess r m, MonadIO m, Typeable a) => m a
+expect = receive [match pure]
+{-# INLINE expect #-}
+{-# SPECIALIZE expect :: (Typeable a) => Process r a #-}
+
+-- | Match any message of a specific type.
+match :: (Typeable a) => (a -> m b) -> Match m b
+match = matchIf (const True)
+{-# INLINE match #-}
 
 {-
 -- alias

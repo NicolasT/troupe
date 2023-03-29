@@ -32,9 +32,6 @@ module Troupe.Process
     demonitor,
     exit,
     isProcessAlive,
-    spawn,
-    spawnLink,
-    spawnMonitor,
     spawnWithOptions,
     SpawnOptions (..),
     ThreadAffinity (..),
@@ -43,9 +40,7 @@ module Troupe.Process
     sendLazy,
     receive,
     receiveTimeout,
-    expect,
     Match,
-    match,
     matchIf,
   )
 where
@@ -586,8 +581,8 @@ data ThreadAffinity
 
 -- | The low-level spawn that takes an additional options argument.
 --
--- 'spawn', 'spawnLink' and 'spawnMonitor' are specialized versions of this
--- function.
+-- 'Troupe.spawn', 'Troupe.spawnLink' and 'Troupe.spawnMonitor' are specialized
+-- versions of this function.
 spawnWithOptions :: (MonadProcess r m, MonadIO m) => SpawnOptions t -> Process r a -> m t
 spawnWithOptions !options process = do
   let cb pid = do
@@ -601,49 +596,6 @@ spawnWithOptions !options process = do
 
   spawnImpl (spawnOptionsAffinity options) cb process
 {-# SPECIALIZE spawnWithOptions :: SpawnOptions t -> Process r a -> Process r t #-}
-
--- | Spawn a new process.
-spawn :: (MonadProcess r m, MonadIO m) => Process r a -> m ProcessId
-spawn = spawnWithOptions options
-  where
-    options =
-      SpawnOptions
-        { spawnOptionsLink = False,
-          spawnOptionsMonitor = WithoutMonitor,
-          spawnOptionsAffinity = Unbound
-        }
-{-# INLINE spawn #-}
-{-# SPECIALIZE spawn :: Process r a -> Process r ProcessId #-}
-
--- | Spawn a new process, and atomically 'link' to it.
---
--- See 'spawn' and 'link'.
-spawnLink :: (MonadProcess r m, MonadIO m) => Process r a -> m ProcessId
-spawnLink = spawnWithOptions options
-  where
-    options =
-      SpawnOptions
-        { spawnOptionsLink = True,
-          spawnOptionsMonitor = WithoutMonitor,
-          spawnOptionsAffinity = Unbound
-        }
-{-# INLINE spawnLink #-}
-{-# SPECIALIZE spawnLink :: Process r a -> Process r ProcessId #-}
-
--- | Spawn a new process, and atomically 'monitor' it.
---
--- See 'spawn' and 'monitor'.
-spawnMonitor :: (MonadProcess r m, MonadIO m) => Process r a -> m (ProcessId, MonitorRef)
-spawnMonitor = spawnWithOptions options
-  where
-    options =
-      SpawnOptions
-        { spawnOptionsLink = False,
-          spawnOptionsMonitor = WithMonitor,
-          spawnOptionsAffinity = Unbound
-        }
-{-# INLINE spawnMonitor #-}
-{-# SPECIALIZE spawnMonitor :: Process r a -> Process r (ProcessId, MonitorRef) #-}
 
 data SendOptions = SendOptions
 
@@ -750,17 +702,6 @@ receiveTimeout !t = receiveWithOptions options
         }
 {-# INLINE receiveTimeout #-}
 {-# SPECIALIZE receiveTimeout :: Int -> [Match (Process r) a] -> Process r (Maybe a) #-}
-
--- | Utility to 'receive' a value of a specific type.
-expect :: (MonadProcess r m, MonadIO m, Typeable a) => m a
-expect = receive [match pure]
-{-# INLINE expect #-}
-{-# SPECIALIZE expect :: (Typeable a) => Process r a #-}
-
--- | Match any message of a specific type.
-match :: (Typeable a) => (a -> m b) -> Match m b
-match = matchIf (const True)
-{-# INLINE match #-}
 
 -- | Match any message meeting some predicate of a specific type.
 matchIf :: (Typeable a) => (a -> Bool) -> (a -> m b) -> Match m b
