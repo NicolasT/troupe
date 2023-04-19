@@ -41,4 +41,4 @@ jobs:
 
       - name: Check formatting of Cabal project description
         run: |
-          ~/.cabal/bin/cabal-fmt --Werror --check troupe/troupe.cabal
+          cabal-fmt --Werror --check troupe/troupe.cabal
