@@ -13,6 +13,7 @@ module Troupe
     spawn,
     spawnLink,
     spawnMonitor,
+    kindaUnlift,
 
     -- *** Spawning processes with options
     spawnWithOptions,
@@ -118,6 +119,7 @@ import Troupe.Process
     sendLazy,
     setProcessOption,
     spawnWithOptions,
+    kindaUnlift,
     unlink,
   )
 import Troupe.Types (Down (..), MonitorRef, ProcessId)
