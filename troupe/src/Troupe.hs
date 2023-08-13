@@ -68,6 +68,7 @@ module Troupe
 
     -- * @mtl@-style transformer support
     MonadProcess (..),
+    withProcessEnv
   )
 where
 
@@ -94,6 +95,7 @@ import Troupe.Process
   ( DemonitorOption (..),
     Match,
     MonadProcess (..),
+    withProcessEnv,
     NodeContext (..),
     Process,
     ProcessEnv (..),
@@ -132,9 +134,9 @@ import Troupe.Types (Down (..), MonitorRef, ProcessId)
 -- doesn't necessarily return when @p@ returns.
 runNode :: r -> Process r a -> IO ()
 runNode r process = do
-  nodeContext <- newNodeContext r
+  nodeContext <- newNodeContext
   processContext <- newProcessContext nodeContext
-  let processEnv = ProcessEnv nodeContext processContext
+  let processEnv = ProcessEnv nodeContext processContext r
 
   _ <- runProcess (spawn process) processEnv
 

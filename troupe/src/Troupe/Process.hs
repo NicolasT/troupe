@@ -21,6 +21,7 @@ module Troupe.Process
     MonadProcess (..),
     Process,
     runProcess,
+    withProcessEnv,
     self,
     ProcessOption (..),
     setProcessOption,
@@ -148,20 +149,18 @@ import Troupe.Types
     succProcessId,
   )
 
-data NodeContext r = NodeContext
+data NodeContext = NodeContext
   { nodeContextNextProcessId :: {-# UNPACK #-} !(TVar ProcessId),
     nodeContextNextMonitorRefId :: {-# UNPACK #-} !(TVar MonitorRefId),
-    nodeContextProcesses :: {-# UNPACK #-} !(Map ProcessId ProcessContext),
-    nodeContextR :: r
+    nodeContextProcesses :: {-# UNPACK #-} !(Map ProcessId ProcessContext)
   }
 
-newNodeContext :: r -> IO (NodeContext r)
-newNodeContext r =
+newNodeContext :: IO NodeContext
+newNodeContext =
   NodeContext
     <$> newTVarIO processId0
     <*> newTVarIO monitorRefId0
     <*> Map.newIO
-    <*> pure r
 
 data ProcessContext = ProcessContext
   { processContextId :: {-# UNPACK #-} !ProcessId,
@@ -173,7 +172,7 @@ data ProcessContext = ProcessContext
     processContextMonitorees :: {-# UNPACK #-} !(Set MonitorRef)
   }
 
-newProcessContextSTM :: CQueue Dynamic -> ReaderT (NodeContext r) STM ProcessContext
+newProcessContextSTM :: CQueue Dynamic -> ReaderT NodeContext STM ProcessContext
 newProcessContextSTM queue = do
   pid <- newPid
   lift $
@@ -189,15 +188,17 @@ newProcessContextSTM queue = do
       writeTVarR nodeContextNextProcessId $!! succProcessId curr
       pure curr
 
-newProcessContext :: NodeContext r -> IO ProcessContext
+newProcessContext :: NodeContext -> IO ProcessContext
 newProcessContext nodeContext = do
   queue <- newCQueue
   atomically $ runReaderT (newProcessContextSTM queue) nodeContext
 
 data ProcessEnv r = ProcessEnv
-  { processEnvNodeContext :: {-# UNPACK #-} !(NodeContext r),
-    processEnvProcessContext :: {-# UNPACK #-} !ProcessContext
+  { processEnvNodeContext :: {-# UNPACK #-} !NodeContext,
+    processEnvProcessContext :: {-# UNPACK #-} !ProcessContext,
+    processEnvLocalContext :: !r
   }
+  deriving stock (Functor)
 
 -- | @mtl@-style class to bring 'Process' support to transformers.
 class (Monad m) => MonadProcess r m | m -> r where
@@ -273,20 +274,15 @@ instance MonadProcess r (Process r) where
   {-# INLINE getProcessEnv #-}
 
 instance MonadReader r (Process r) where
-  ask = Process $ reader (nodeContextR . processEnvNodeContext)
-  reader f = Process $ reader (f . nodeContextR . processEnvNodeContext)
-  local f (Process a) = Process $ local mapR a
-    where
-      mapR env =
-        env
-          { processEnvNodeContext =
-              (processEnvNodeContext env)
-                { nodeContextR = f (nodeContextR (processEnvNodeContext env))
-                }
-          }
+  ask = Process $ reader processEnvLocalContext
+  reader f = Process $ reader (f . processEnvLocalContext)
+  local f (Process a) = Process $ local (fmap f) a
 
 runProcess :: Process r a -> ProcessEnv r -> IO a
 runProcess = runReaderT . unProcess
+
+withProcessEnv :: (r -> r') -> Process r' a -> Process r a
+withProcessEnv f (Process m) = Process $ withReaderT (fmap f) m
 
 -- | Get the 'ProcessId' of the running process.
 self :: (MonadProcess r m) => m ProcessId
@@ -360,7 +356,7 @@ deliverExit !pc !exc = do
       Nothing -> pure () -- Process exited without exception
       Just _ -> deliverException pc (toException exc')
 
-lookupProcess :: ProcessId -> ReaderT (NodeContext r) STM (Maybe ProcessContext)
+lookupProcess :: ProcessId -> ReaderT NodeContext STM (Maybe ProcessContext)
 lookupProcess !pid = reader nodeContextProcesses >>= lift . Map.lookup pid
 
 linkSTM :: ProcessId -> ReaderT (ProcessEnv r) STM ()
