@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - name: checkout
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v4
       - name: ormolu
         uses: mrkkrp/ormolu-action@v14
         with:
@@ -37,7 +37,7 @@ jobs:
           cabal install --allow-newer=base "cabal-fmt-0.1.6"
 
       - name: checkout
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v4
 
       - name: Check formatting of Cabal project description
         run: |
